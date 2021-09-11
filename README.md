@@ -15,6 +15,11 @@ cd multiscanners-upload
 pip install -r requirements.txt
 ```
 
+## Usage Exemple
+```
+python3 uploader.py /media/share/mimikatz.exe -v
+```
+
 ## Help
 ```
 python3 uploader.py -h
