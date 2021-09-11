@@ -1,0 +1,13 @@
+api:
+    virustotal: 
+        key: ""
+        url: "https://www.virustotal.com/api/v3"
+    hybrid_analysis: 
+        key: ""
+        url: "https://www.hybrid-analysis.com/api/v2"
+    malshare: 
+        key: ""
+        url: "https://malshare.com/api.php"
+    cape:
+        key: ""
+        url: "https://www.capesandbox.com/apiv2"
