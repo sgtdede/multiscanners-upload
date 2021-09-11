@@ -9,8 +9,6 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S',)
 logger = logging.getLogger(__name__)
 
-from ipdb import set_trace
-
 parser = argparse.ArgumentParser(description='Multi Scanner uploaded')
 parser.add_argument(dest='filenames',metavar='filename', nargs='*')
 parser.add_argument('-v', dest='verbose', action='store_true', help='verbose mode')
@@ -34,17 +32,18 @@ CAPE_URL = config.get("api").get("cape").get("url")
 CAPE_KEY = config.get("api").get("cape").get("key")
 MALSHARE_URL = config.get("api").get("malshare").get("url")
 MALSHARE_KEY = config.get("api").get("malshare").get("key")
+
 SYNC_DELAY = 30
+UPLOAD_TIMEOUT = 600
 
 async def main():
     for filename in args.filenames:
-        L = await asyncio.gather(
+        await asyncio.gather(
             upload_virustotal(filename),
             upload_cape(filename),
             upload_hybrid_analysis(filename),
             upload_malshare(filename)
         )
-    print(L)
 
 async def upload_virustotal(filename):
     try:
@@ -57,17 +56,18 @@ async def upload_virustotal(filename):
         files = {'file': open(filename, 'rb')}
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, data=files) as resp:
+            async with session.post(url, headers=headers, data=files, timeout=UPLOAD_TIMEOUT) as resp:
                 text = await resp.json()
                 resp.status
-                if not(resp.status == 200):
-                    logger.error(f"Virustotal: cannot upload {filename}, error code: {resp.status}, reason: {text}")
-                    return
-                else:
-                    id = text.get('data').get('id')
-                    logger.info(f"Virustotal: {filename} uploaded, id: {id}")
-                    if not args.skip:
-                        await monitor_virustotal_task(id)
+
+        if not(resp.status == 200):
+            logger.error(f"Virustotal: cannot upload {filename}, error code: {resp.status}, reason: {text}")
+            return
+        else:
+            id = text.get('data').get('id')
+            logger.info(f"Virustotal: {filename} uploaded, id: {id}")
+            if not args.skip:
+                await monitor_virustotal_task(id)
 
     except asyncio.TimeoutError:
         logger.error("Virustotal upload, TimeoutError")
@@ -92,7 +92,7 @@ async def monitor_virustotal_task(task_id):
                         await asyncio.sleep(SYNC_DELAY)
                     else:
                         logger.info(f"Virustotal: task {task_id} finished with status {status}")
-                        logger.info(f"Virustotal: analysis available at {text.get('data').get('links').get('item')}")
+                        logger.info(f"Virustotal: report available at {text.get('data').get('links').get('item')}")
                         return
 
 
@@ -113,8 +113,8 @@ async def monitor_cape_task(task_id):
                         logger.debug(f"Cape: time before next sync: {SYNC_DELAY}")
                         await asyncio.sleep(SYNC_DELAY)
                     else:
-                        set_trace()
                         logger.info(f"Cape: task {task_id} finished with status {status}")
+                        logger.info(f"Cape: report available at https://capesandbox.com/analysis/{text.get('data').get('id')}/")
                         return
 
 
@@ -131,18 +131,19 @@ async def upload_cape(filename):
         files = {'file': open(filename, 'rb')}
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, data=files) as resp:
+            async with session.post(url, headers=headers, data=files, timeout=UPLOAD_TIMEOUT) as resp:
                 text = await resp.json()
                 resp.status
-                if not(resp.status == 200 and text.get("error") == False):
-                    logger.error(f"Cape: cannot upload {filename}, error code: {resp.status}, reason: {text}")
-                    return
-                else:
-                    task_ids = text.get('data').get('task_ids')
-                    logger.info(f"Cape: {filename} uploaded, id: {task_ids}")
-                    if not args.skip:
-                        for task_id in task_ids:
-                            await monitor_cape_task(task_id)
+
+        if not(resp.status == 200 and text.get("error") == False):
+            logger.error(f"Cape: cannot upload {filename}, error code: {resp.status}, reason: {text}")
+            return
+        else:
+            task_ids = text.get('data').get('task_ids')
+            logger.info(f"Cape: {filename} uploaded, id: {task_ids}")
+            if not args.skip:
+                for task_id in task_ids:
+                    await monitor_cape_task(task_id)
     
     except asyncio.TimeoutError:
         logger.error("Cape upload, TimeoutError")
@@ -171,19 +172,20 @@ async def upload_hybrid_analysis(filename, environment_id='120', experimental_an
         form_data.add_field('environment_id', environment_id)
         form_data.add_field('experimental_anti_evasion', experimental_anti_evasion)
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, data=form_data) as resp:
+            async with session.post(url, headers=headers, data=form_data, timeout=UPLOAD_TIMEOUT) as resp:
                 text = await resp.json()
                 resp.status
-                if resp.status not in (200, 201):
-                    logger.error(f"Hybrid Analysis: cannot upload {filename}, error code: {resp.status}, reason: {text}")
-                    return
-                else:
-                    job_id = text.get('job_id')
-                    sha256 = text.get('sha256')
-                    logger.info(f"Hybrid Analysis: {filename} uploaded, job_id: {job_id}")
-                    if not args.skip:
-                        await monitor_hybrid_task(job_id)
-                        logger.info(f"Hybrid Analysis: report available at https://www.hybrid-analysis.com/sample/{sha256}?environmentId={environment_id}")
+
+        if resp.status not in (200, 201):
+            logger.error(f"Hybrid Analysis: cannot upload {filename}, error code: {resp.status}, reason: {text}")
+            return
+        else:
+            job_id = text.get('job_id')
+            sha256 = text.get('sha256')
+            logger.info(f"Hybrid Analysis: {filename} uploaded, job_id: {job_id}")
+            if not args.skip:
+                await monitor_hybrid_task(job_id)
+                logger.info(f"Hybrid Analysis: report available at https://www.hybrid-analysis.com/sample/{sha256}?environmentId={environment_id}")
 
     except asyncio.TimeoutError:
         logger.error("Hybrid Analysis upload, TimeoutError")
@@ -230,11 +232,12 @@ async def upload_malshare(filename):
             async with session.post(url, data=form_data) as resp:
                 text = await resp.text()
                 resp.status
-                if not(resp.status == 200):
-                    logger.error(f"Malshare: cannot upload {filename}, error code: {resp.status}, reason: {text}")
-                    return
-                else:
-                    logger.info(f"Malshare: {filename} uploaded, {text}")
+
+        if not(resp.status == 200):
+            logger.error(f"Malshare: cannot upload {filename}, error code: {resp.status}, reason: {text}")
+            return
+        else:
+            logger.info(f"Malshare: {filename} uploaded, {text}")
 
     except asyncio.TimeoutError:
         logger.error("Malshare upload, TimeoutError")
