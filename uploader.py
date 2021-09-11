@@ -34,7 +34,7 @@ MALSHARE_URL = config.get("api").get("malshare").get("url")
 MALSHARE_KEY = config.get("api").get("malshare").get("key")
 
 SYNC_DELAY = 30
-UPLOAD_TIMEOUT = 600
+UPLOAD_TIMEOUT = aiohttp.ClientTimeout(total=600)
 
 async def main():
     for filename in args.filenames:
@@ -58,7 +58,6 @@ async def upload_virustotal(filename):
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, data=files, timeout=UPLOAD_TIMEOUT) as resp:
                 text = await resp.json()
-                resp.status
 
         if not(resp.status == 200):
             logger.error(f"Virustotal: cannot upload {filename}, error code: {resp.status}, reason: {text}")
@@ -92,7 +91,9 @@ async def monitor_virustotal_task(task_id):
                         await asyncio.sleep(SYNC_DELAY)
                     else:
                         logger.info(f"Virustotal: task {task_id} finished with status {status}")
-                        logger.info(f"Virustotal: report available at {text.get('data').get('links').get('item')}")
+                        sha256 = text.get('meta').get('file_info').get('sha256')
+                        logger.info(f"Virustotal: report available at https://www.virustotal.com/gui/file/{sha256}")
+                        # logger.info(f"Virustotal: report available at {text.get('data').get('links').get('item')}")
                         return
 
 
@@ -121,7 +122,7 @@ async def monitor_cape_task(task_id):
 
 async def upload_cape(filename):
     try:
-        logger.info("Uploading to cape")
+        logger.info("Uploading to Cape")
         if not CAPE_KEY:
             logger.warning("Cape: API key not found, please fill it in conf.yml file")
             return
@@ -130,10 +131,14 @@ async def upload_cape(filename):
         url = f"{CAPE_URL}/tasks/create/file/"
         files = {'file': open(filename, 'rb')}
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=UPLOAD_TIMEOUT) as session:
             async with session.post(url, headers=headers, data=files, timeout=UPLOAD_TIMEOUT) as resp:
-                text = await resp.json()
-                resp.status
+                try:
+                    text = await resp.json()
+                except:
+                    text = await resp.text()
+                    logger.error(f"Cape: unexpected error in the response received after the upload of {filename}, receveided: {text}")
+                    return
 
         if not(resp.status == 200 and text.get("error") == False):
             logger.error(f"Cape: cannot upload {filename}, error code: {resp.status}, reason: {text}")
@@ -157,7 +162,7 @@ async def upload_cape(filename):
 # 100: 'Windows 7 32 bit'
 async def upload_hybrid_analysis(filename, environment_id='120', experimental_anti_evasion='true'):
     try:
-        logger.info("Uploading to hybrid analysis")
+        logger.info("Uploading to Hybrid Analysis")
         if not HYBRID_ANALYSIS_KEY:
             logger.warning("Hybrid Analysis API key not found, please fill it in conf.yml file")
             return
@@ -173,8 +178,12 @@ async def upload_hybrid_analysis(filename, environment_id='120', experimental_an
         form_data.add_field('experimental_anti_evasion', experimental_anti_evasion)
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, data=form_data, timeout=UPLOAD_TIMEOUT) as resp:
-                text = await resp.json()
-                resp.status
+                try:
+                    text = await resp.json()
+                except:
+                    text = await resp.text()
+                    logger.error(f"Hybrid Analysis: unexpected error in the response received after the upload of {filename}, receveided: {text}")
+                    return
 
         if resp.status not in (200, 201):
             logger.error(f"Hybrid Analysis: cannot upload {filename}, error code: {resp.status}, reason: {text}")
@@ -219,7 +228,7 @@ async def monitor_hybrid_task(task_id):
 
 async def upload_malshare(filename):
     try:
-        logger.info("Uploading to malshare")
+        logger.info("Uploading to Malshare")
         if not MALSHARE_KEY:
             logger.warning("Malshare API key not found, please fill it in conf.yml file")
             return
@@ -228,10 +237,9 @@ async def upload_malshare(filename):
         form_data = aiohttp.FormData()
         form_data.add_field('upload', open(filename, 'rb'), filename=filename)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=form_data) as resp:
+        async with aiohttp.ClientSession(timeout=UPLOAD_TIMEOUT) as session:
+            async with session.post(url, data=form_data,timeout=UPLOAD_TIMEOUT) as resp:
                 text = await resp.text()
-                resp.status
 
         if not(resp.status == 200):
             logger.error(f"Malshare: cannot upload {filename}, error code: {resp.status}, reason: {text}")
