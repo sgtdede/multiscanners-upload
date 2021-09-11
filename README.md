@@ -55,4 +55,6 @@ When you got the keys, insert them into the conf.yml file and enjoy
 
 1. Create an account here [https://www.capesandbox.com/accounts/signup/](https://www.capesandbox.com/accounts/signup/)
 2. Generate your API Key (token) using the following request
-`curl -d "username=<USER>&password=<PASSWD>" https://capesandbox.com/apiv2/api-token-auth/`
+```
+curl -d "username=<USER>&password=<PASSWD>" https://capesandbox.com/apiv2/api-token-auth/
+```
